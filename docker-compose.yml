@@ -1,0 +1,44 @@
+version: '3'
+
+volumes:
+  exec_data:
+
+services:
+  redis:
+    image: redis:6.2.6
+    command: --port 5045
+    ports:
+      - "5045:5045"
+    networks:
+      - default
+  amazon-braket-hybrid-jobs-handler:
+    image: planqk/amazon-braket-hybrid-jobs-handler:local
+    command: sh /startup.sh
+    ports:
+      - "8890:8890"
+    environment:
+      - REDIS_URL=redis://redis:5045
+      - DATABASE_URL=sqlite:////data/app.db
+    volumes:
+      - exec_data:/data
+    networks:
+      - default
+  rq-worker:
+    image: planqk/amazon-braket-hybrid-jobs-handler:local
+    command: rq worker --url redis://redis:5045 amazon-braket-hybrid-jobs-handler
+    environment:
+      - FLASK_RUN_HOST=amazon-braket-hybrid-jobs-handler
+      - FLASK_RUN_PORT=8890
+      - REDIS_URL=redis://redis:5045
+      - DATABASE_URL=sqlite:////data/app.db
+    volumes:
+      - exec_data:/data
+    depends_on:
+      - redis
+    deploy:
+      replicas: 1
+    networks:
+      - default
+networks:
+  default:
+    driver: bridge

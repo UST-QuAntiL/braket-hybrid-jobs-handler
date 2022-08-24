@@ -1,0 +1,1 @@
+FLASK_APP=amazon-braket-hybrid-jobs-handler.py

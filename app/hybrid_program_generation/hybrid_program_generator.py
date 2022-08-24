@@ -1,0 +1,279 @@
+# ******************************************************************************
+#  Copyright (c) 2021 University of Stuttgart
+#
+#  See the NOTICE file(s) distributed with this work for additional
+#  information regarding copyright ownership.
+#
+#  Licensed under the Apache License, Version 2.0 (the "License");
+#  you may not use this file except in compliance with the License.
+#  You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+#  Unless required by applicable law or agreed to in writing, software
+#  distributed under the License is distributed on an "AS IS" BASIS,
+#  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+#  See the License for the specific language governing permissions and
+#  limitations under the License.
+# ******************************************************************************
+
+import json
+import os
+import tempfile
+from os.path import basename
+
+from app import app
+from redbaron import RedBaron
+from sys import getsizeof
+
+from app.hybrid_program_generation.method_handler import get_output_parameters_of_execute, add_method_recursively
+from app.hybrid_program_generation.polling_agent_handler import generate_polling_agent
+from app.hybrid_program_generation.zip_handler import zip_polling_agent, zip_runtime_program
+
+def create_hybrid_program(beforeLoop, afterLoop, loopCondition, taskIdProgramMap):
+    app.logger.info('Creating Amazon Braket Hybrid Jobs program with tasks before loop: ' + str(beforeLoop))
+    app.logger.info('Creating Amazon Braket Hybrid Jobs Runtime program with tasks after loop: ' + str(afterLoop))
+
+    # directory containing all templates required for generation
+    templatesDirectory = os.path.join(os.path.realpath(os.path.join(os.getcwd(), os.path.dirname(__file__))),
+                                      'templates')
+
+    # RedBaron object containing all information about the hybrid program to generate
+    with open(os.path.join(templatesDirectory, 'amazon_braket_hybrid_jobs.py'), "r") as source_code:
+        hybridProgramBaron = RedBaron(source_code.read())
+
+    # retrieve all task names related to programs that have to be merged into the hybrid program
+    taskNames = []
+    if beforeLoop and beforeLoop != 'null':
+        beforeLoop = beforeLoop.split(",")
+        taskNames.extend(beforeLoop)
+    if afterLoop and afterLoop != 'null':
+        afterLoop = afterLoop.split(",")
+        taskNames.extend(afterLoop)
+
+    # add methods from the given programs to the hybrid program
+    programMetaData = {}
+    app.logger.info('Adding programs for the following tasks: ' + str(taskNames))
+    for task in taskNames:
+        app.logger.info('Searching for program for task ID: ' + str(task))
+        if task not in taskIdProgramMap:
+            return {'error': 'Unable to find program related to task with ID: ' + task}
+        try:
+            hybridProgramBaron, methodName, inputParameterList, outputParameterList = handle_program(hybridProgramBaron,
+                                                                                                     taskIdProgramMap[
+                                                                                                         task], task)
+            app.logger.info('Added methods for task with ID ' + task + '. Method name to call from root: ' + methodName)
+            app.logger.info('Call requires input parameters: ' + str(inputParameterList))
+            programMetaData[task] = {'methodName': methodName,
+                                     'inputParameters': tuple(inputParameterList),
+                                     'outputParameters': tuple(outputParameterList)}
+        except Exception as error:
+            app.logger.error(error)
+            return {'error': 'Failed to analyse and incorporate Python file for task with ID ' + task + '!\n'
+                             + str(error)}
+
+    # generate the main method of the Amazon Braket Hybrid Jobs Runtime program
+    try:
+        app.logger.info('Starting generation of main method for Amazon Braket Hybrid Jobs Runtime program...')
+        hybridProgramBaron, inputParameters, outputParameters = generate_main_method(hybridProgramBaron, beforeLoop,
+                                                                                     afterLoop, loopCondition,
+                                                                                     programMetaData)
+        app.logger.info('Successfully generated main method for Amazon Braket Hybrid Jobs Runtime program...')
+    except Exception as error:
+        app.logger.error(error)
+        return {'error': str(error)}
+
+    # write generated hybrid program code to result file
+    hybridProgramTemp = tempfile.NamedTemporaryFile(suffix=".py", delete=False)
+    with open(hybridProgramTemp.name, "w") as source_code:
+        source_code.write(hybridProgramBaron.dumps())
+
+    # generate meta data and write to file
+    metaDataTemp = tempfile.NamedTemporaryFile(suffix=".json", delete=False)
+    with open(metaDataTemp.name, "w") as source_code:
+        source_code.write(generate_program_metadata(inputParameters, outputParameters))
+
+    # zip generated hybrid program and meta data files
+    hybridProgramData, fileName = zip_runtime_program(hybridProgramTemp, metaDataTemp)
+
+    # generate polling agent and write to file
+    pollingAgentTemp = tempfile.NamedTemporaryFile(suffix=".py", delete=False)
+    with open(pollingAgentTemp.name, "w") as source_code:
+        source_code.write(generate_polling_agent(inputParameters, outputParameters))
+
+    # zip polling agent
+    pollingAgentData = zip_polling_agent(templatesDirectory, pollingAgentTemp, fileName)
+
+    # return generated Amazon Braket Hybrid Jobs Runtime program and corresponding polling agent
+    result = {'program': hybridProgramData, 'agent': pollingAgentData}
+    return result
+
+
+def generate_main_method(hybridProgramBaron, beforeLoop, afterLoop, loopCondition, programMetaData):
+    """Generate the main method executing the hybrid loop"""
+    app.logger.info('Generating main method for Amazon Braket Hybrid Jobs Runtime program!')
+
+    # find the main method stub
+    mainMethodNodes = hybridProgramBaron.find_all('def', name='main')
+    if len(mainMethodNodes) != 1:
+        raise Exception('Unable to find main method in Amazon Braket Hybrid Jobs Runtime template!')
+    mainMethodNode = mainMethodNodes[0]
+
+    # get the position of the return node within the template to insert the logic directly before
+    returnPosition = mainMethodNode.index(mainMethodNode.find('return'))
+    mainMethodNode.remove(mainMethodNode[returnPosition])
+    startPosition = returnPosition - 2
+
+    #loopPosition = mainMethodNode.index(mainMethodNode.find('loopCondition'))
+    #mainMethodNode[loopPosition:loopPosition] = "" + loopCondition
+
+    # add while loop which is terminated if the loop condition is met in between the before and after tasks
+    # mainMethodNode[startPosition-1:startPosition-1] = "input_dir = os.environ['AMZN_BRAKET_INPUT_DIR']"
+    #mainMethodNode[startPosition:startPosition] = "while True:\n    pass"
+    whileNode = mainMethodNode.find('while')
+
+    # lists of already assigned variables and required overall inputs
+    assignedVariables = []
+    requiredInputs = []
+
+    # add tasks before the loop
+    if beforeLoop and beforeLoop != 'null':
+        for task in beforeLoop:
+            whileNode, requiredInputs, assignedVariables = add_program_invocation(whileNode, requiredInputs,
+                                                                                  assignedVariables, task,
+                                                                                  programMetaData)
+
+    # add loop condition and break loop if meet
+    loopCondition = loopCondition.replace('${', '').replace('}', '')  # remove Camunda specific evaluation
+    whileNode.value.append('\n')
+    whileNode.value.append('if not ' + loopCondition + ':\n    break')
+
+    # add tasks after the loop
+    if afterLoop and afterLoop != 'null':
+        for task in afterLoop:
+            whileNode, requiredInputs, assignedVariables = add_program_invocation(whileNode, requiredInputs,
+                                                                                  assignedVariables, task,
+                                                                                  programMetaData)
+
+    # get values from required external input parameters
+    filteredInputs = []
+    if getsizeof(requiredInputs) > 0:
+        mainMethodNode.insert(startPosition, "hyperparameters = os.environ['SM_USER_ARGS']")
+        startPosition = startPosition + 1
+
+    for requiredInput in requiredInputs:
+        if requiredInput.startswith('device'):
+            # map the Amazon Braket Hybrid Jobs device to the hyperparameter
+            mainMethodNode.insert(startPosition, requiredInput + ' = os.environ["SM_HP_DEVICE'+ '"]')
+        #elif requiredInput.startswith('access_key'):
+         #   mainMethodNode.insert(startPosition, requiredInput + ' = access_key')
+        #elif requiredInput.startswith('secret_access_key'):
+         #   mainMethodNode.insert(startPosition, requiredInput + ' = secret_access_key')
+        else:
+            # retrieve from input args
+            mainMethodNode.insert(startPosition, requiredInput + ' = os.environ["SM_HP_' + requiredInput.upper() + '"]')
+            filteredInputs.append(requiredInput)
+    mainMethodNode.insert(startPosition, '# loading input parameters')
+    mainMethodNode.insert(startPosition, '\n')
+
+    # get output variables
+    output = 'serialized_result = {'
+    for assignedVariable in assignedVariables:
+        output += '"' + assignedVariable + '": str(' + assignedVariable + '),\n'
+    output += '}'
+    mainMethodNode.append('# serialize and return output')
+    mainMethodNode.append(output)
+    mainMethodNode.append('save_job_result(serialized_result)')
+    mainMethodNode.append('\n')
+    mainMethodNode.append('\n')
+
+    return hybridProgramBaron, filteredInputs, assignedVariables
+
+
+def generate_program_metadata(inputParameters, outputParameters):
+    meta_data = {'name': "generated-amazon-braket-hybrid-jobs-program",
+                 'description': "Hybrid program generated based on a workflow fragment.",
+                 'max_execution_time': 18000,
+                 "spec": {"parameters": {"properties": {}, "required": []},
+                          "return_values": {"properties": {}}}}
+
+    for inputParameter in inputParameters:
+        meta_data['spec']['parameters']['properties'][inputParameter] = {"type": "string"}
+        meta_data['spec']['parameters']['required'].append(inputParameter)
+
+    for outputParameter in outputParameters:
+        meta_data['spec']['return_values']['properties'][outputParameter] = {"type": "string"}
+
+    return json.dumps(meta_data)
+
+
+def add_program_invocation(whileNode, requiredInputs, assignedVariables, task, programMetaData):
+    """Add the invocation for the program representing the given tasks under the given while node"""
+    app.logger.info('Adding logic for task with ID ' + str(task))
+    metaData = programMetaData[task]
+    outputParameters = ', '.join(metaData['outputParameters'])
+    inputParameters = ', '.join(metaData['inputParameters'])
+
+    # generate invocation
+    invocation = outputParameters + ' = ' + metaData['methodName'] + '(' + inputParameters + ')'
+    whileNode.value.append(invocation)
+
+    # check if invocation used not set variables and request them as input
+    for inputParameter in metaData['inputParameters']:
+        if inputParameter not in assignedVariables and inputParameter not in requiredInputs:
+            requiredInputs.append(inputParameter)
+    assignedVariables.extend(metaData['outputParameters'])
+
+    return whileNode, requiredInputs, assignedVariables
+
+
+def handle_program(hybridProgramBaron, path, task):
+    """ Handle a program of the candidate and add the execute method,
+    as well as all dependent code to the given RedBaron object"""
+
+    # separator between code snippets from different programs
+    hybridProgramBaron.append('##############################################')
+    hybridProgramBaron.append('# Code snippets for file ' + basename(path))
+    hybridProgramBaron.append('##############################################')
+
+    with open(path, "r") as source_code:
+        taskFile = RedBaron(source_code.read())
+
+        # get all imports from the file
+        importListFile = taskFile.find_all('import')
+        importListFile.extend(taskFile.find_all('FromImportNode'))
+
+        # get last import node of the current RedBaron object
+        importListHybridProgram = hybridProgramBaron.find_all('import')
+        importListHybridProgram.extend(hybridProgramBaron.find_all('FromImportNode'))
+        index = 0
+        for i in importListHybridProgram:
+            index = max(index, hybridProgramBaron.index(i))
+
+        # for now all imports are added independent of their occurrence
+        hybridProgramBaron[index:index] = importListFile
+
+        # find the 'execute' method within the file
+        #executeNodes = taskFile.find_all('def', name='execute')
+        executeNodes = taskFile.find_all('def', name='execute')
+
+        # if not found abort the generation
+        if len(executeNodes) != 1:
+            raise Exception('Unable to find execute method in program: ' + basename(path))
+
+        app.logger.info('EXECUTENODES IS OF LENGTH ' + str(len(executeNodes)))
+        executeNode = executeNodes[0]
+
+        # get the output parameters for the given program
+        outputParameterList = get_output_parameters_of_execute(taskFile)
+        if outputParameterList is None:
+            raise Exception('Unable to retrieve output parameters of execute method in program: ' + basename(path))
+
+        # add the execute method and all depending methods to the RedBaron object
+        methodName, inputParameterList, signatureExtendedWithBackend, signatureExtendedIndices = add_method_recursively(
+            hybridProgramBaron,
+            taskFile,
+            executeNode,
+            task)
+
+    return hybridProgramBaron, methodName, inputParameterList, outputParameterList
