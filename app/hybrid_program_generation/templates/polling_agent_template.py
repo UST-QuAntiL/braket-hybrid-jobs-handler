@@ -11,7 +11,8 @@ from urllib.request import urlopen
 import os
 import random
 import string
-
+import json
+import tarfile
 
 def poll():
     print('Polling for new external tasks at the Camunda engine with URL: ', pollingEndpoint)
@@ -58,20 +59,8 @@ def poll():
                     job_name = "HybridJob" + random_suffix
                     ##### LOAD INPUT DATA SECTION
 
-                    # callback to retrieve intermediate results
-                    #def interim_result_callback(job_id, interim_result):
-                     #   print(f"interim result: {interim_result}")
-
-                    # create an Amazon Braket Hybrid Job 
-                    #backend = provider.get_backend(ibmq_backend)
                     program_inputs = {}
-                    #options = {'backend_name': backend.name()}
-                    #print('Executing on device: ' + backend.name())
-                    #job = provider.runtime.run(program_id=program_id,
-                     #                          options=options,
-                      #                         inputs=program_inputs,
-                       #                        callback=interim_result_callback
-                        #                       )
+                    # create an Amazon Braket Hybrid Job 
                     braketClient = boto3.client('braket', aws_access_key_id=access_key, aws_secret_access_key=secret_access_key, config=my_config)
                     response = braketClient.create_job(
                                     algorithmSpecification={
@@ -99,7 +88,7 @@ def poll():
                                     },
                                     jobName=job_name,
                                     outputDataConfig={
-                                        's3Path': 's3://' + bucket_name + '/jobs2/'
+                                        's3Path': 's3://' + bucket_name + '/jobs/' + job_name + '/'
                                     },
                                     roleArn=role_Arn
                                 )
@@ -109,6 +98,7 @@ def poll():
                     status = response2['status']
                     print('Status of the created job')
                     print(response2)
+                    outputPath = str(response2['outputDataConfig'])
                     # wait until job is completed
                     while status != 'COMPLETED':
                         response2 = braketClient.get_job(
@@ -117,6 +107,11 @@ def poll():
                         status = response2['status']
                     print('Response message of the completed job')
                     print(response2)
+                    outputPath = outputPath.replace("'", '"')
+                    outputPath = json.loads(outputPath)
+                    folder = 'jobs/' + job_name + '/output'
+                    file_name = 'model.tar.gz' 
+                    result = download_output_file(s3client, bucket_name, folder, file_name)
                     #print(result)
 
                     # encode parameters as files due to the string size limitation of camunda
@@ -136,6 +131,28 @@ def download_data(url):
     response = urlopen(url)
     data = response.read().decode('utf-8')
     return str(data)
+
+def download_output_file(s3_client, bucket, folder, file_name):
+    result = ""
+    key = folder + "/" + file_name
+    directory_to_extract = mkdtemp() + os.sep
+    print(directory_to_extract)
+    with open(directory_to_extract + file_name, 'wb') as f:
+       s3_client.download_fileobj(bucket, key, f)
+
+    if file_name.endswith("tar.gz"):
+        tar = tarfile.open(directory_to_extract + os.sep + file_name, "r:gz")
+        tar.extractall(directory_to_extract)
+        hybrid_program_data = os.path.join(os.getcwd(), os.path.join(directory_to_extract, "results.json"))
+        print(hybrid_program_data)
+        with open(hybrid_program_data, 'r') as myfile:
+            data = myfile.read()
+            obj = json.loads(data)
+            job_results = str(obj['dataDictionary']).replace("'", '"')
+            result = json.loads(job_results)
+        tar.close()
+    
+    return result
 
 # start polling for requests
 camundaEndpoint = os.environ['CAMUNDA_ENDPOINT']

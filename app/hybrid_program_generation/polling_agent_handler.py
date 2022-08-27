@@ -90,27 +90,27 @@ def generate_polling_agent(inputParameters, outputParameters):
 
         # add output parameters
         outputDict = {"workerId": pollingAgentName, "variables": {}}
-        #for outputParameter in outputParameters:
+        for outputParameter in outputParameters:
             # encode output parameter as file to circumvent the Camunda size restrictions on strings
-         #   encoding = 'encoded_' + outputParameter + ' = base64.b64encode(str.encode(result["' + \
-           #            outputParameter + '"])).decode("utf-8") '
-          #  ifNode.insert(outputNodeIndex + 1, encoding)
+            encoding = 'encoded_' + outputParameter + ' = base64.b64encode(str.encode(result["' + \
+                       outputParameter + '"])).decode("utf-8") '
+            ifNode.insert(outputNodeIndex + 1, encoding)
 
             # add to final result object send to Camunda
-           # outputDict["variables"][outputParameter] = {"value": 'encoded_' + outputParameter, "type": "File",
-                                                      #  "valueInfo": {
-                                                       #     "filename": outputParameter + ".txt",
-                                                        #    "encoding": ""
-                                                        #}
-                                                        #}
+            outputDict["variables"][outputParameter] = {"value": 'encoded_' + outputParameter, "type": "File",
+                                                        "valueInfo": {
+                                                            "filename": outputParameter + ".txt",
+                                                            "encoding": ""
+                                                        }
+                                                        }
 
         # remove the quotes added by json.dumps for the variables in the target file
         outputJson = json.dumps(outputDict)
-        #for outputParameter in outputParameters:
-         #   outputJson = outputJson.replace('"encoded_' + outputParameter + '"', 'encoded_' + outputParameter)
+        for outputParameter in outputParameters:
+            outputJson = outputJson.replace('"encoded_' + outputParameter + '"', 'encoded_' + outputParameter)
 
         # remove the placeholder
-        #ifNode.remove(ifNode[outputNodeIndex])
+        ifNode.remove(ifNode[outputNodeIndex])
 
         # update the result body with the output parameters
         outputBodyNode.value = outputJson
