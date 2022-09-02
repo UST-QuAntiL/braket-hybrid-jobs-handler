@@ -10,20 +10,7 @@ Please have a look at the corresponding [documentation](https://github.com/Sharo
 Furthermore, a use case showing the rewrite of quantum workflows using the amazon-braket-hybrid-jobs-handler is available [here](https://github.com/SharonNaemi/UseCase).
 
 ## Docker Setup
-### Current Situation
-* Clone the repository:
-```
-git clone https://github.com/UST-QuAntiL/amazon-braket-hybrid-jobs-handler.git
-```
 
-* Build the local docker image and then start the containers using the [docker-compose file](docker-compose.yml): 
-```
-docker build -t planqk/amazon-braket-hybrid-jobs-handler:local .
-docker-compose up
-
-```
-
-### When this repo is added to planqk in dockerhub
 * Clone the repository:
 ```
 git clone https://github.com/UST-QuAntiL/amazon-braket-hybrid-jobs-handler.git
