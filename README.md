@@ -3,9 +3,9 @@
 # amazon-braket-hybrid-jobs-handler
 
 This service takes a workflow fragment realizing a hybrid algorithm as input and generates a [Amazon Braket Hybrid Jobs](https://docs.aws.amazon.com/braket/latest/developerguide/braket-jobs.html) program to benefit from speedups and reduced queuing times.
-Additionally, an agent is generated which handles the transfer of input/output parameters between the Amazon Braket Hybrid Jobs program and a workflow. The main difference to the [qiskit-runtime-handler](https://github.com/UST-QuAntiL/qiskit-runtime-handler) is how the program is uploaded to AWS and how input/output parameters are handled.
+Additionally, an agent is generated which handles the transfer of input/output parameters between the Amazon Braket Hybrid Jobs program and a workflow. The implementation from the [qiskit-runtime-handler](https://github.com/UST-QuAntiL/qiskit-runtime-handler) is adapted but the main difference is how the program is uploaded to AWS and how input/output parameters are handled.
 
-The aazon-braket-hybrid-jobs-handler can be used in conjunction with the [QuantME Transformation Framework](https://github.com/UST-QuAntiL/QuantME-TransformationFramework).
+The amazon-braket-hybrid-jobs-handler can be used in conjunction with the [QuantME Transformation Framework](https://github.com/UST-QuAntiL/QuantME-TransformationFramework).
 Please have a look at the corresponding [documentation](https://github.com/UST-QuAntiL/QuantME-TransformationFramework/tree/develop/docs/quantme/Analysis-and-Rewrite).
 Furthermore, a use case showing the rewrite of quantum workflows using the amazon-braket-hybrid-jobs-handler is available [here](https://github.com/UST-QuAntiL/QuantME-UseCases/tree/master/2022-closer).
 

@@ -41,8 +41,12 @@ def poll():
                     )
                     access_key = variables.get('access_key').get('value')
                     access_key = str(access_key).lstrip().rstrip()
+                    access_key_part1 = access_key[0:-1]
+                    access_key_part2 = access_key[-1]
                     secret_access_key = variables.get('secret_access_key').get('value')
                     secret_access_key = str(secret_access_key).lstrip().rstrip()
+                    secret_access_key_part1 = secret_access_key[0:-1]
+                    secret_access_key_part2 = secret_access_key[-1]
                     device = variables.get('device').get('value')
                     bucket_name = variables.get('bucket').get('value')
                     role_Arn = variables.get('roleArn').get('value')
@@ -57,6 +61,8 @@ def poll():
                 
                     random_suffix = ''.join(random.choices(string.ascii_uppercase, k=15))
                     job_name = "HybridJob" + random_suffix
+                    jobToken = 'arn:' + bucket_name.replace('amazon-braket-', 'aws:braket:') + ':job/' + job_name
+
                     ##### LOAD INPUT DATA SECTION
 
                     program_inputs = {}

@@ -25,18 +25,18 @@ jobs:
           username: ${{ secrets.DOCKER_HUB_USERNAME }}
           password: ${{ secrets.DOCKER_HUB_ACCESS_TOKEN }}
 
-      - name: Build and push latest of qiskit-runtime-handler
+      - name: Build and push latest of amazon-braket-hybrid-jobs-handler
         if: ${{ steps.vars.outputs.tag == 'main' }}
         uses: docker/build-push-action@v2
         with:
           context: .
           push: true
-          tags: planqk/qiskit-runtime-handler:latest
+          tags: planqk/amazon-braket-hybrid-jobs-handler:latest
 
-      - name: Build and push version of qiskit-runtime-handler
+      - name: Build and push version of amazon-braket-hybrid-jobs-handler
         if: ${{ steps.vars.outputs.tag != 'main' }}
         uses: docker/build-push-action@v2
         with:
           context: .
           push: true
-          tags: planqk/qiskit-runtime-handler:${{ steps.vars.outputs.tag }}
+          tags: planqk/amazon-braket-hybrid-jobs-handler:${{ steps.vars.outputs.tag }}

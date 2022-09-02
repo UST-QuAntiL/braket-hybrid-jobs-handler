@@ -165,10 +165,12 @@ def generate_main_method(hybridProgramBaron, beforeLoop, afterLoop, loopConditio
         if requiredInput.startswith('device'):
             # map the Amazon Braket Hybrid Jobs device to the hyperparameter
             mainMethodNode.insert(startPosition, requiredInput + ' = os.environ["SM_HP_DEVICE'+ '"]')
-        #elif requiredInput.startswith('access_key'):
-         #   mainMethodNode.insert(startPosition, requiredInput + ' = access_key')
-        #elif requiredInput.startswith('secret_access_key'):
-         #   mainMethodNode.insert(startPosition, requiredInput + ' = secret_access_key')
+        elif requiredInput == "access_key":
+            # we need to split the access_key otherwise a validation error occurs
+            mainMethodNode.insert(startPosition, "access_key" + ' = os.environ["SM_HP_' + requiredInput.upper() + "_PART1"'"] + os.environ["SM_HP_ACCESS_KEY_PART2"]')
+        elif requiredInput == "secret_access_key":
+            # we need to split the access_key otherwise a validation error occurs
+            mainMethodNode.insert(startPosition, "secret_access_key" + ' = os.environ["SM_HP_' + requiredInput.upper() + "_PART1"'"] + os.environ["SM_HP_SECRET_ACCESS_KEY_PART2"]')
         else:
             # retrieve from input args
             mainMethodNode.insert(startPosition, requiredInput + ' = os.environ["SM_HP_' + requiredInput.upper() + '"]')

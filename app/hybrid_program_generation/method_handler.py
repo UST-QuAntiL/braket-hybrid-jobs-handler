@@ -35,8 +35,8 @@ def add_method_recursively(hybridProgramBaron, taskFile, methodNode, prefix):
         # be careful if you have assignments like this foo = 2 * bar(), the function bar() will not be added, 
         # so you have to provide in the original program two statements: foo = bar() , foo = foo * 2
         assignmentValues = assignmentNode.value
-        if str(assignmentValues).__contains__('AwsDevice'):
-            assignmentValues = "deviceName = os.environ['SM_HP_DEVICE'] \n device = AwsDevice(deviceName)"
+        if str(assignmentValues).__contains__('outputS3KeyPrefix'):
+            assignmentValues.value = str(assignmentValues)[0:-1] + ", 'jobToken': os.environ['SM_HP_JOBTOKEN']}" 
             continue
         if len(assignmentValues) < 2 or str(assignmentValues.value[1].type) != 'call':
             continue

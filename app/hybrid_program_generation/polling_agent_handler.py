@@ -58,28 +58,49 @@ def generate_polling_agent(inputParameters, outputParameters):
         # add input parameters to the polling agent
         inputDict = {}
         inputParameters.append('device')
+        # add jobToken to associate tasks with hybrid jobs
+        inputParameters.append('jobToken')
+        # add credentials if boto3 is used to create tasks
+        inputParameters.append('access_key_part1')
+        inputParameters.append('access_key_part2')
+        inputParameters.append('secret_access_key_part1')
+        inputParameters.append('secret_access_key_part2')
         for inputParameter in inputParameters:
-            inputRetrievalIfStatement = 'if variables.get("' + inputParameter + '").get("type") == "String":'
-            inputRetrievalIfBranch = '\n    ' + inputParameter + ' = variables.get("' + inputParameter + '").get("value")'
-            downloadEndpoint = 'camundaEndpoint + "/process-instance/" + externalTask.get("processInstanceId") + "/variables/' + inputParameter + '/data"'
-            inputRetrievalElseBranch = '\nelse:\n    ' + inputParameter + ' = download_data(' + downloadEndpoint + ')'
-            inputRetrieval = inputRetrievalIfStatement + inputRetrievalIfBranch + inputRetrievalElseBranch
-            ifNode.insert(inputNodeIndex + 1, inputRetrieval)
-
-            # add parameter to dict passed to Amazon Braket Hybrid Jobs program
-            inputDict[inputParameter] = inputParameter
+            if not inputParameter.startswith("access_key_part") and not inputParameter.startswith("secret_access_key_part") and not inputParameter.startswith("jobToken"):
+                inputRetrievalIfStatement = 'if variables.get("' + inputParameter + '").get("type") == "String":'
+                inputRetrievalIfBranch = '\n    ' + inputParameter + ' = variables.get("' + inputParameter + '").get("value")'
+                downloadEndpoint = 'camundaEndpoint + "/process-instance/" + externalTask.get("processInstanceId") + "/variables/' + inputParameter + '/data"'
+                inputRetrievalElseBranch = '\nelse:\n    ' + inputParameter + ' = download_data(' + downloadEndpoint + ')'
+                inputRetrieval = inputRetrievalIfStatement + inputRetrievalIfBranch + inputRetrievalElseBranch
+                ifNode.insert(inputNodeIndex + 1, inputRetrieval)
+                inputDict[inputParameter] = inputParameter
+            elif inputParameter == "access_key" or inputParameter == "secret_access_key":
+                continue
+            else:    
+                # add parameter to dict passed to Amazon Braket Hybrid Jobs program
+                inputDict[inputParameter] = inputParameter
 
         # remove the placeholder
         ifNode.remove(ifNode[inputNodeIndex])
 
-        # add retrieved input parameters to hyperparameters for program invocation
+        # add retrieved input parameters to hyperparameters for program invocationdocke
         programInputsNode = ifNode.find('assign', target=lambda target: target and (target.value == 'program_inputs'))
         inputJson = json.dumps(inputDict)
+
+        # add handling for credentials
+        inputParameters.append('access_key_part1')
+        inputParameters.append('access_key_part2')
+        inputParameters.append('secret_access_key_part1')
+        inputParameters.append('secret_access_key_part2')
+
+        ## to associate the quantum tasks with the hybrid job later
+        inputParameters.append('jobToken')
+
         for inputParameter in inputParameters:
-            print("DER INPIT")
-            print(inputParameter)
             if inputParameter.startswith('device'):
                 inputJson = inputJson.replace(': "' + inputParameter + '"', ': device')
+            elif inputParameter.startswith('jobToken'):
+                inputJson = inputJson.replace(': "' + inputParameter + '"', ': jobToken')
             else:
                 inputJson = inputJson.replace(': "' + inputParameter + '"', ': str(' + inputParameter + ')')
         programInputsNode.value = inputJson
